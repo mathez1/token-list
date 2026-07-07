@@ -1,0 +1,33 @@
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Lyžiar na Korbe 🎿🚚 — Ski Truck Slalom</title>
+<link
+  rel="icon"
+  href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎿</text></svg>"
+/>
+<link rel="stylesheet" href="style.css" />
+
+<div id="cabinet">
+  <div id="stage">
+    <canvas id="game" width="540" height="760"></canvas>
+
+    <!-- On-screen touch controls (mobile) -->
+    <div id="touch-controls" aria-hidden="true">
+      <button class="tbtn" id="btn-left">◀</button>
+      <div class="tbtn-mid">
+        <button class="tbtn small" id="btn-up">▲ GÁS</button>
+        <button class="tbtn small" id="btn-down">▼ BRZDA</button>
+      </div>
+      <button class="tbtn" id="btn-right">▶</button>
+    </div>
+
+    <button id="mute" title="Zapnúť / vypnúť zvuk">🔊</button>
+  </div>
+
+  <p id="hint">
+    ⬅️ ➡️ / A D — kormidluj &nbsp;•&nbsp; ⬆️ plyn &nbsp;•&nbsp; ⬇️ brzda &nbsp;•&nbsp;
+    <b>Medzera</b> — štart / reštart
+  </p>
+</div>
+
+<script src="game.js"></script>

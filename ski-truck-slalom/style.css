@@ -1,0 +1,158 @@
+:root {
+  --ink: #14110f;
+  --paper: #fff4d6;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background:
+    radial-gradient(1200px 600px at 50% -10%, #6fd3ff 0%, #3aa7e8 40%, #1f6fb0 100%);
+  font-family: "Comic Sans MS", "Chalkboard SE", "Comic Neue", "Trebuchet MS", system-ui,
+    sans-serif;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: none;
+}
+
+/* silly floating background clouds */
+body::before {
+  content: "☁️      ☁️          ☁️      ☁️";
+  position: fixed;
+  top: 6%;
+  left: 0;
+  width: 200%;
+  font-size: 42px;
+  opacity: 0.85;
+  white-space: nowrap;
+  animation: drift 40s linear infinite;
+  pointer-events: none;
+}
+@keyframes drift {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+#cabinet {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  max-height: 100%;
+  padding: 8px;
+}
+
+#stage {
+  position: relative;
+  border: 8px solid #1b1b1b;
+  border-radius: 20px;
+  box-shadow: 0 14px 0 #0c0c0c, 0 24px 40px rgba(0, 0, 0, 0.45),
+    inset 0 0 0 4px #2f2f2f;
+  background: #101820;
+  line-height: 0;
+  overflow: hidden;
+}
+
+canvas#game {
+  display: block;
+  width: min(92vw, calc((100vh - 120px) * 0.7105));
+  height: auto;
+  aspect-ratio: 540 / 760;
+  image-rendering: -webkit-optimize-contrast;
+  touch-action: none;
+}
+
+#mute {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  border: 3px solid #14110f;
+  background: #ffd84d;
+  font-size: 20px;
+  cursor: pointer;
+  box-shadow: 0 4px 0 #14110f;
+  z-index: 5;
+}
+#mute:active {
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 #14110f;
+}
+
+#hint {
+  margin: 0;
+  color: #fff;
+  font-size: 14px;
+  text-align: center;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.35);
+  max-width: 520px;
+}
+#hint b {
+  color: #ffe14d;
+}
+
+/* ---- touch controls ---- */
+#touch-controls {
+  position: absolute;
+  inset: auto 0 0 0;
+  display: none;
+  justify-content: space-between;
+  align-items: flex-end;
+  padding: 12px;
+  gap: 10px;
+  z-index: 4;
+}
+.tbtn {
+  border: 3px solid #14110f;
+  background: rgba(255, 255, 255, 0.82);
+  color: #14110f;
+  font-family: inherit;
+  font-weight: bold;
+  border-radius: 16px;
+  box-shadow: 0 5px 0 #14110f;
+  cursor: pointer;
+}
+.tbtn:not(.small) {
+  width: 84px;
+  height: 84px;
+  font-size: 34px;
+}
+.tbtn-mid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.tbtn.small {
+  padding: 10px 14px;
+  font-size: 15px;
+}
+.tbtn:active {
+  transform: translateY(4px);
+  box-shadow: 0 1px 0 #14110f;
+}
+
+/* show touch controls on coarse pointers (phones/tablets) */
+@media (pointer: coarse) {
+  #touch-controls {
+    display: flex;
+  }
+  #hint {
+    display: none;
+  }
+}
