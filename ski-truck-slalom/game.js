@@ -113,7 +113,9 @@
       src.start();
     }
     function startEngine() {
-      if (!ac || engineOsc || muted) return;
+      // note: do NOT bail on `muted` — the oscillator must exist so that
+      // unmuting mid-run works; engine() drives its gain to 0 while muted.
+      if (!ac || engineOsc) return;
       engineOsc = ac.createOscillator();
       engineGain = ac.createGain();
       engineOsc.type = "sawtooth";
@@ -363,6 +365,7 @@
     finishTime = 0;
     shake = 0;
     flashFinish = 0;
+    resetControls();
     Audio.startEngine();
     state = "playing";
   }
@@ -1017,8 +1020,7 @@
     ctx.save();
     ctx.translate(skier.rx, skier.ry);
     ctx.rotate(skier.rot);
-    drawFace("scared");
-    // reuse a compact body
+    // reuse a compact body — draw head/beanie FIRST, then the face on top
     ctx.fillStyle = "#ff8c1a";
     rr(-8, -12, 16, 18, 6);
     ctx.fill();
@@ -1030,6 +1032,7 @@
     ctx.beginPath();
     ctx.arc(0, -20, 8, Math.PI, 0);
     ctx.fill();
+    drawFace("scared");
     ctx.strokeStyle = "#e63946";
     ctx.lineWidth = 4;
     ctx.beginPath();
@@ -1563,7 +1566,13 @@
       Audio.startEngine();
     }
   }
+  function resetControls() {
+    CONTROL.left = CONTROL.right = CONTROL.up = CONTROL.down = false;
+  }
   window.addEventListener("blur", () => {
+    // a held key's keyup is never delivered to a blurred window, so drop all
+    // held-input state — otherwise the truck keeps steering/boosting on resume
+    resetControls();
     if (state === "playing") togglePause();
   });
 
@@ -1587,6 +1596,9 @@
     },
     get score() {
       return totalScore();
+    },
+    get px() {
+      return player.x;
     },
     _jump(m) {
       if (state === "playing") distanceM = m;
