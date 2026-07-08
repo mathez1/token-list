@@ -80,16 +80,16 @@ canvas#game {
 
 #mute {
   position: absolute;
-  top: 10px;
-  right: 10px;
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  border: 3px solid #14110f;
+  top: 9px;
+  right: 9px;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: 2px solid #14110f;
   background: #ffd84d;
-  font-size: 20px;
+  font-size: 16px;
   cursor: pointer;
-  box-shadow: 0 4px 0 #14110f;
+  box-shadow: 0 3px 0 #14110f;
   z-index: 5;
 }
 #mute:active {
@@ -552,6 +552,7 @@ canvas#game {
   let floaters = [];
   let confetti = [];
   let scenery = []; // roadside trees / lamps / signs
+  let trail = []; // scorch marks the skis leave on the asphalt
 
   let speed = CFG.SPEED_START; // km/h (current)
   let distanceM = 0;
@@ -617,6 +618,7 @@ canvas#game {
     floaters = [];
     confetti = [];
     scenery = [];
+    trail = [];
     nextSceneryAt = 0;
     lastOpenLane = 1;
     speed = CFG.SPEED_START;
@@ -694,6 +696,7 @@ canvas#game {
     scrollY = (scrollY + frameScroll) % 40;
     worldScroll += frameScroll;
     updateScenery(frameScroll);
+    updateTrail(dt);
 
     // decay visual bits everywhere
     updateParticles(dt);
@@ -792,16 +795,17 @@ canvas#game {
     // --- spawning
     trySpawn();
 
-    // --- trail effects: sparks off the skis (it's asphalt!), exhaust, smoke
+    // --- trail effects: skid marks + sparks off the skis (it's asphalt!)
+    depositTrail();
     const spd01 = clamp((speed - 40) / (CFG.SPEED_CAP - 40), 0, 1);
     const sparkN = 1 + Math.floor(spd01 * 2); // both skis, per frame
     for (let k = 0; k < sparkN; k++) {
       spawnSpark(skier.x - 9 + rnd(-2, 2), skier.y + 17, skier.vx);
       spawnSpark(skier.x + 9 + rnd(-2, 2), skier.y + 17, skier.vx);
     }
-    // exhaust from the tailpipe
-    if (Math.random() < (5 + spd01 * 9) * dt)
-      spawnExhaust(player.x + player.w / 2 - 9, player.y + player.h / 2 - 2);
+    // exhaust from the tailpipe (kept light so it doesn't hide the skier)
+    if (Math.random() < (3 + spd01 * 5) * dt)
+      spawnExhaust(player.x + player.w / 2 - 5, player.y + player.h / 2 - 4);
     // extra tyre smoke when flooring it
     if (CONTROL.up && Math.random() < dt * 18) {
       spawnSmoke(player.x - player.w / 2 + 6, player.y + player.h / 2);
@@ -1052,6 +1056,9 @@ canvas#game {
       const lineY = player.y - remaining * CFG.PPM;
       if (lineY > -40 && lineY < H + 40) drawFinishLine(lineY);
     }
+
+    // ski scorch marks on the asphalt (behind the skier)
+    drawTrail();
 
     // traffic behind/around player, then player on top
     for (const c of traffic) drawCar(c);
@@ -1372,13 +1379,53 @@ canvas#game {
       kind: "exhaust",
       x,
       y,
-      vx: rnd(-14, 14),
-      vy: rnd(22, 58),
-      life: rnd(0.5, 1.0),
-      max: 1.0,
-      size: rnd(4, 9),
+      vx: rnd(-10, 10),
+      vy: rnd(24, 56),
+      life: rnd(0.4, 0.8),
+      max: 0.8,
+      size: rnd(3, 6),
       col: "#6b6f76",
     });
+  }
+
+  // ---- ski trail (scorch marks that scroll away with the road) ----------
+  const TRAIL_LIFE = 1.3;
+  function depositTrail() {
+    const lean = clamp(skier.vx / 200, -1, 1) * 5;
+    trail.push({
+      lx: skier.x - 8 + lean,
+      rx: skier.x + 8 + lean,
+      y: skier.y + 18,
+      life: TRAIL_LIFE,
+    });
+    if (trail.length > 140) trail.shift();
+  }
+  function updateTrail(dt) {
+    for (const p of trail) {
+      p.y += frameScroll;
+      p.life -= dt;
+    }
+    trail = trail.filter((p) => p.life > 0 && p.y < H + 40);
+  }
+  function drawTrail() {
+    if (trail.length < 2) return;
+    ctx.save();
+    ctx.lineCap = "round";
+    ctx.lineWidth = 5;
+    for (let i = 1; i < trail.length; i++) {
+      const a = trail[i - 1],
+        b = trail[i];
+      const al = clamp(b.life / TRAIL_LIFE, 0, 1) * 0.4;
+      if (al <= 0.02) continue;
+      ctx.strokeStyle = "rgba(24,20,16," + al + ")";
+      ctx.beginPath();
+      ctx.moveTo(a.lx, a.y);
+      ctx.lineTo(b.lx, b.y);
+      ctx.moveTo(a.rx, a.y);
+      ctx.lineTo(b.rx, b.y);
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 
   function drawFinishLine(y) {
@@ -1551,83 +1598,161 @@ canvas#game {
     drawSkier(sx, sy, clamp(skier.vx / 200, -0.6, 0.6));
   }
 
-  function drawSkier(x, y, lean) {
+  function drawSki(sx) {
     ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate(lean * 0.5);
-
-    // skis
-    ctx.strokeStyle = "#e63946";
+    ctx.translate(sx, 15);
+    // body
+    ctx.fillStyle = "#c8202f";
+    rr(-3, -11, 6, 24, 3);
+    ctx.fill();
+    // top-left highlight + right shadow -> bevel
+    ctx.fillStyle = "rgba(255,255,255,0.4)";
+    rr(-3, -11, 2.4, 24, 2);
+    ctx.fill();
+    ctx.fillStyle = "rgba(0,0,0,0.28)";
+    rr(1, -11, 2, 24, 1);
+    ctx.fill();
+    // upturned tip
+    ctx.strokeStyle = "#e23444";
     ctx.lineWidth = 4;
     ctx.lineCap = "round";
     ctx.beginPath();
-    ctx.moveTo(-12, 16);
-    ctx.lineTo(-6, 22);
-    ctx.moveTo(12, 16);
-    ctx.lineTo(6, 22);
+    ctx.moveTo(0, -11);
+    ctx.lineTo(0, -15);
     ctx.stroke();
-    // ski tips
-    ctx.beginPath();
-    ctx.moveTo(-12, 16);
-    ctx.lineTo(-16, 12);
-    ctx.moveTo(12, 16);
-    ctx.lineTo(16, 12);
-    ctx.stroke();
+    // binding
+    ctx.fillStyle = "#1c1c1c";
+    ctx.fillRect(-3, -2, 6, 4);
+    ctx.restore();
+  }
 
-    // legs
-    ctx.strokeStyle = "#2a3b6b";
+  function drawArm(x1, y1, x2, y2) {
+    ctx.strokeStyle = "#f07d10";
     ctx.lineWidth = 5;
+    ctx.lineCap = "round";
     ctx.beginPath();
-    ctx.moveTo(0, 2);
-    ctx.lineTo(-8, 16);
-    ctx.moveTo(0, 2);
-    ctx.lineTo(8, 16);
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(255,200,120,0.75)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+    ctx.fillStyle = "#d63a2f";
+    ctx.beginPath();
+    ctx.arc(x2, y2, 3.2, 0, 6.28);
+    ctx.fill();
+  }
+
+  // a rounder, sphere-shaded little skier with a cast shadow (reads as 3D)
+  function drawSkier(x, y, lean) {
+    // ground contact shadow (squishes as he leans)
+    ctx.save();
+    ctx.translate(x + lean * 6, y + 20);
+    ctx.fillStyle = "rgba(0,0,0,0.26)";
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 15 + Math.abs(lean) * 5, 5.5, 0, 0, 6.28);
+    ctx.fill();
+    ctx.restore();
+
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(lean * 0.45);
+
+    drawSki(-9);
+    drawSki(9);
+
+    // legs / pants
+    ctx.strokeStyle = "#26407a";
+    ctx.lineCap = "round";
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.moveTo(-2, 2);
+    ctx.lineTo(-8, 14);
+    ctx.moveTo(2, 2);
+    ctx.lineTo(8, 14);
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(120,150,220,0.55)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-3, 2);
+    ctx.lineTo(-8, 12);
+    ctx.moveTo(1, 2);
+    ctx.lineTo(7, 12);
     ctx.stroke();
 
-    // body / jacket (shaded)
-    const jg = ctx.createLinearGradient(0, -12, 0, 6);
-    jg.addColorStop(0, "#ffb14d");
-    jg.addColorStop(1, "#f07d10");
+    // puffy jacket — volume via radial gradient
+    const jg = ctx.createRadialGradient(-4, -8, 2, 0, -3, 15);
+    jg.addColorStop(0, "#ffc673");
+    jg.addColorStop(0.6, "#ff8c1a");
+    jg.addColorStop(1, "#dc6a06");
     ctx.fillStyle = jg;
-    rr(-8, -12, 16, 18, 6);
+    ctx.beginPath();
+    ctx.ellipse(0, -3, 11, 12, 0, 0, 6.28);
     ctx.fill();
-    ctx.strokeStyle = "rgba(120,60,0,0.45)";
+    ctx.strokeStyle = "rgba(120,60,0,0.3)";
     ctx.lineWidth = 1.5;
     ctx.stroke();
-
-    // arms flailing
-    const flail = Math.sin(elapsed * 22) * 6;
-    ctx.strokeStyle = "#ff8c1a";
-    ctx.lineWidth = 5;
+    // puffy seams
+    ctx.strokeStyle = "rgba(150,80,10,0.3)";
+    ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(-6, -6);
-    ctx.lineTo(-16, -14 + flail);
-    ctx.moveTo(6, -6);
-    ctx.lineTo(16, -14 - flail);
+    ctx.moveTo(-9, -4);
+    ctx.lineTo(9, -4);
+    ctx.moveTo(0, -14);
+    ctx.lineTo(0, 8);
     ctx.stroke();
 
-    // head
-    ctx.fillStyle = "#ffd9a8";
+    // arms out with gloves
+    const flail = Math.sin(elapsed * 20) * 5;
+    drawArm(-2, -6, -15, -13 + flail);
+    drawArm(2, -6, 15, -13 - flail);
+
+    // head — sphere shaded
+    const hg = ctx.createRadialGradient(-3, -21, 1, 0, -18, 9);
+    hg.addColorStop(0, "#ffe6c4");
+    hg.addColorStop(1, "#e6b382");
+    ctx.fillStyle = hg;
     ctx.beginPath();
-    ctx.arc(0, -18, 8, 0, 6.28);
-    ctx.fill();
-    // beanie
-    ctx.fillStyle = "#1f9e5a";
-    ctx.beginPath();
-    ctx.arc(0, -20, 8, Math.PI, 0);
-    ctx.fill();
-    ctx.fillStyle = "#fff";
-    ctx.beginPath();
-    ctx.arc(0, -27, 3, 0, 6.28);
+    ctx.arc(0, -18, 8.5, 0, 6.28);
     ctx.fill();
 
-    // face
+    // beanie dome + band
+    const bg = ctx.createLinearGradient(0, -30, 0, -19);
+    bg.addColorStop(0, "#2bd07a");
+    bg.addColorStop(1, "#149a53");
+    ctx.fillStyle = bg;
+    ctx.beginPath();
+    ctx.arc(0, -20, 8.5, Math.PI, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "#0f7d40";
+    ctx.fillRect(-8.5, -22, 17, 2.6);
+    // goggles resting on the forehead/band
+    ctx.fillStyle = "rgba(38,48,68,0.92)";
+    rr(-8, -25, 16, 4.5, 2);
+    ctx.fill();
+    ctx.fillStyle = "rgba(150,210,255,0.7)";
+    rr(-6.5, -24.4, 6, 2.6, 1);
+    ctx.fill();
+    // pom-pom with shine
+    ctx.fillStyle = "#fff";
+    ctx.beginPath();
+    ctx.arc(0, -29.5, 3, 0, 6.28);
+    ctx.fill();
+    ctx.fillStyle = "rgba(0,0,0,0.08)";
+    ctx.beginPath();
+    ctx.arc(1, -28.8, 3, 0, 6.28);
+    ctx.fill();
+
+    // expressive face on top
     drawFace(skier.face);
 
     ctx.restore();
 
-    // speech bubble
-    if (skier.say && skier.sayT > 0) drawBubble(x, y - 40, skier.say);
+    if (skier.say && skier.sayT > 0) drawBubble(x, y - 42, skier.say);
   }
 
   function drawFace(mood) {
@@ -1669,27 +1794,37 @@ canvas#game {
     ctx.save();
     ctx.translate(skier.rx, skier.ry);
     ctx.rotate(skier.rot);
-    // reuse a compact body — draw head/beanie FIRST, then the face on top
-    ctx.fillStyle = "#ff8c1a";
-    rr(-8, -12, 16, 18, 6);
+    // jacket
+    const jg = ctx.createRadialGradient(-4, -8, 2, 0, -3, 14);
+    jg.addColorStop(0, "#ffc673");
+    jg.addColorStop(1, "#dc6a06");
+    ctx.fillStyle = jg;
+    ctx.beginPath();
+    ctx.ellipse(0, -3, 10, 11, 0, 0, 6.28);
     ctx.fill();
-    ctx.fillStyle = "#ffd9a8";
+    drawArm(-2, -6, -14, -13);
+    drawArm(2, -6, 14, -13);
+    // head + beanie
+    const hg = ctx.createRadialGradient(-3, -21, 1, 0, -18, 8);
+    hg.addColorStop(0, "#ffe6c4");
+    hg.addColorStop(1, "#e6b382");
+    ctx.fillStyle = hg;
     ctx.beginPath();
     ctx.arc(0, -18, 8, 0, 6.28);
     ctx.fill();
-    ctx.fillStyle = "#1f9e5a";
+    ctx.fillStyle = "#149a53";
     ctx.beginPath();
     ctx.arc(0, -20, 8, Math.PI, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "#fff";
+    ctx.beginPath();
+    ctx.arc(0, -28, 2.6, 0, 6.28);
     ctx.fill();
     drawFace("scared");
-    ctx.strokeStyle = "#e63946";
-    ctx.lineWidth = 4;
-    ctx.beginPath();
-    ctx.moveTo(-14, 16);
-    ctx.lineTo(-4, 22);
-    ctx.moveTo(14, 16);
-    ctx.lineTo(4, 22);
-    ctx.stroke();
+    // skis akimbo
+    drawSki(-9);
+    drawSki(9);
     ctx.restore();
     if (skier.say && skier.sayT > 0) drawBubble(skier.rx, skier.ry - 36, skier.say);
   }
@@ -2096,195 +2231,304 @@ canvas#game {
     ctx.restore();
   }
 
-  // ---------------------------------------------------------------- HUD
-  function panel(x, y, w, h) {
-    ctx.fillStyle = "rgba(20,17,15,0.55)";
-    rr(x, y, w, h, 10);
+  // ---------------------------------------------------------------- HUD/UI
+  function uiFont(size, weight) {
+    return (weight || "bold") + " " + size + "px 'Trebuchet MS', system-ui, sans-serif";
+  }
+  // frosted card used across HUD and overlays
+  function panel(x, y, w, h, r) {
+    r = r == null ? 16 : r;
+    ctx.fillStyle = "rgba(0,0,0,0.28)";
+    rr(x, y + 4, w, h, r);
     ctx.fill();
+    const g = ctx.createLinearGradient(0, y, 0, y + h);
+    g.addColorStop(0, "rgba(40,36,54,0.9)");
+    g.addColorStop(1, "rgba(21,18,30,0.9)");
+    ctx.fillStyle = g;
+    rr(x, y, w, h, r);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.13)";
+    ctx.lineWidth = 1.4;
+    rr(x + 0.7, y + 0.7, w - 1.4, h - 1.4, r);
+    ctx.stroke();
+  }
+  function drawStar(cx, cy, r) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.beginPath();
+    for (let i = 0; i < 5; i++) {
+      const a = -Math.PI / 2 + i * ((Math.PI * 2) / 5);
+      const a2 = a + Math.PI / 5;
+      ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+      ctx.lineTo(Math.cos(a2) * r * 0.46, Math.sin(a2) * r * 0.46);
+    }
+    ctx.closePath();
+    ctx.fillStyle = "#ffd23f";
+    ctx.fill();
+    ctx.strokeStyle = "#c99a15";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
+  }
+  function pillButton(cx, y, label, color) {
+    ctx.font = uiFont(20);
+    const tw = ctx.measureText(label).width + 48;
+    const h = 46;
+    const s = 1 + Math.sin(elapsed * 4.5) * 0.03;
+    ctx.save();
+    ctx.translate(cx, y);
+    ctx.scale(s, s);
+    ctx.fillStyle = "rgba(0,0,0,0.4)";
+    rr(-tw / 2, -h / 2 + 5, tw, h, h / 2);
+    ctx.fill();
+    const g = ctx.createLinearGradient(0, -h / 2, 0, h / 2);
+    g.addColorStop(0, shade(color, 0.24));
+    g.addColorStop(1, shade(color, -0.16));
+    ctx.fillStyle = g;
+    rr(-tw / 2, -h / 2, tw, h, h / 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.45)";
+    ctx.lineWidth = 2;
+    rr(-tw / 2 + 1.5, -h / 2 + 1.5, tw - 3, h - 3, h / 2);
+    ctx.stroke();
+    ctx.fillStyle = "#fff";
+    ctx.textAlign = "center";
+    ctx.font = uiFont(20);
+    ctx.fillText(label, 0, 7);
+    ctx.restore();
   }
 
   function drawHUD() {
     if (state === "menu") return;
-    // top-left: score + distance
-    panel(10, 10, 210, 82);
+    ctx.textBaseline = "alphabetic";
+
+    // ---- SCORE (top-left)
+    panel(12, 12, 196, 60, 14);
+    drawStar(35, 35, 11);
     ctx.textAlign = "left";
     ctx.fillStyle = "#ffe14d";
-    ctx.font = "bold 26px 'Comic Sans MS', sans-serif";
-    ctx.fillText(totalScore().toLocaleString("sk-SK"), 20, 42);
-    ctx.fillStyle = "#fff";
-    ctx.font = "bold 14px 'Comic Sans MS', sans-serif";
-    ctx.fillText("BODY", 20, 58);
-    ctx.fillText("📏 " + (distanceM / 1000).toFixed(2) + " km", 20, 80);
-
-    // top-right: speed
-    panel(W - 150, 10, 140, 82);
+    ctx.font = uiFont(25);
+    ctx.fillText(totalScore().toLocaleString("sk-SK"), 54, 40);
+    ctx.fillStyle = "rgba(255,255,255,0.5)";
+    ctx.font = uiFont(11);
+    ctx.fillText("BODY", 54, 54);
     ctx.textAlign = "right";
-    const spd = Math.round(speed);
-    ctx.fillStyle = spd > 180 ? "#ff6b6b" : "#8fe36b";
-    ctx.font = "bold 30px 'Comic Sans MS', sans-serif";
-    ctx.fillText(spd, W - 58, 44);
-    ctx.fillStyle = "#fff";
-    ctx.font = "bold 13px 'Comic Sans MS', sans-serif";
-    ctx.fillText("km/h", W - 20, 44);
-    // mini speed bar
-    const bw = 118,
-      bx = W - 134,
-      by = 60;
-    ctx.fillStyle = "rgba(0,0,0,0.4)";
-    rr(bx, by, bw, 12, 6);
-    ctx.fill();
+    ctx.fillStyle = "#bfe4ff";
+    ctx.font = uiFont(13);
+    ctx.fillText("📏 " + (distanceM / 1000).toFixed(2) + " km", 200, 54);
+
+    // ---- SPEED (top-right, kept clear of the mute button corner)
     const t = clamp((speed - 40) / (CFG.SPEED_CAP - 40), 0, 1);
-    ctx.fillStyle = t > 0.75 ? "#ff6b6b" : "#8fe36b";
-    rr(bx, by, bw * t, 12, 6);
+    const sx0 = W - 208;
+    panel(sx0, 12, 150, 60, 14);
+    ctx.textAlign = "right";
+    ctx.fillStyle = t > 0.78 ? "#ff6b6b" : t > 0.52 ? "#ffd23f" : "#8fe36b";
+    ctx.font = uiFont(28);
+    ctx.fillText(Math.round(speed), W - 70, 40);
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    ctx.font = uiFont(11);
+    ctx.fillText("km/h", W - 70, 54);
+    const bx = sx0 + 14,
+      by = 46,
+      bw = 92,
+      bh = 8;
+    ctx.fillStyle = "rgba(255,255,255,0.13)";
+    rr(bx, by, bw, bh, 4);
     ctx.fill();
+    ctx.save();
+    rr(bx, by, bw * t, bh, 4);
+    ctx.clip();
+    const gr = ctx.createLinearGradient(bx, 0, bx + bw, 0);
+    gr.addColorStop(0, "#8fe36b");
+    gr.addColorStop(0.6, "#ffd23f");
+    gr.addColorStop(1, "#ff5b5b");
+    ctx.fillStyle = gr;
+    ctx.fillRect(bx, by, bw, bh);
+    ctx.restore();
 
-    // combo (center)
-    if (combo >= 2 && comboTimer > 0) {
-      ctx.textAlign = "center";
-      const pulse = 1 + Math.sin(elapsed * 20) * 0.06;
-      ctx.save();
-      ctx.translate(W / 2, 66);
-      ctx.scale(pulse, pulse);
-      ctx.font = "bold 26px 'Comic Sans MS', sans-serif";
-      ctx.lineWidth = 5;
-      ctx.strokeStyle = "rgba(0,0,0,0.6)";
-      ctx.strokeText("SLALOM x" + combo, 0, 0);
-      ctx.fillStyle = "#ffd23f";
-      ctx.fillText("SLALOM x" + combo, 0, 0);
-      ctx.restore();
-      // combo timer bar
-      ctx.fillStyle = "rgba(0,0,0,0.4)";
-      rr(W / 2 - 60, 76, 120, 6, 3);
-      ctx.fill();
-      ctx.fillStyle = "#ffd23f";
-      rr(W / 2 - 60, 76, 120 * clamp(comboTimer / 2.6, 0, 1), 6, 3);
-      ctx.fill();
-    }
-
-    // progress to CIEL
-    const py = 100;
-    ctx.fillStyle = "rgba(0,0,0,0.4)";
-    rr(W / 2 - 130, py, 260, 14, 7);
+    // ---- progress to CIEL
+    const pw = 300,
+      px0 = (W - pw) / 2,
+      ppy = 88;
+    ctx.textAlign = "center";
+    ctx.fillStyle = "rgba(255,255,255,0.85)";
+    ctx.font = uiFont(11, "600");
+    ctx.fillText(
+      finished ? "🏁 BONUS TRASA" : (distanceM / 1000).toFixed(1) + " / 5.0 km 🏁",
+      W / 2,
+      ppy - 5
+    );
+    ctx.fillStyle = "rgba(0,0,0,0.38)";
+    rr(px0, ppy, pw, 10, 5);
     ctx.fill();
     const prog = clamp(distanceM / CFG.FINISH_M, 0, 1);
-    ctx.fillStyle = "#6fd3ff";
-    rr(W / 2 - 130, py, 260 * prog, 14, 7);
-    ctx.fill();
-    ctx.font = "13px 'Comic Sans MS', sans-serif";
-    ctx.textAlign = "center";
+    ctx.save();
+    rr(px0, ppy, pw * prog, 10, 5);
+    ctx.clip();
+    const pg = ctx.createLinearGradient(px0, 0, px0 + pw, 0);
+    pg.addColorStop(0, "#6fe0ff");
+    pg.addColorStop(1, "#3a8de0");
+    ctx.fillStyle = pg;
+    ctx.fillRect(px0, ppy, pw, 10);
+    ctx.restore();
     ctx.fillStyle = "#fff";
-    ctx.fillText(finished ? "🏁 BONUS TRASA!" : "🏁 CIEL", W / 2, py - 4);
+    ctx.beginPath();
+    ctx.arc(px0 + pw * prog, ppy + 5, 5, 0, 6.28);
+    ctx.fill();
+
+    // ---- combo badge (center)
+    if (combo >= 2 && comboTimer > 0) {
+      const bounce = 1 + Math.sin(elapsed * 16) * 0.05;
+      const txt = "SLALOM  x" + combo;
+      ctx.save();
+      ctx.translate(W / 2, 126);
+      ctx.scale(bounce, bounce);
+      ctx.font = uiFont(18);
+      const tw = ctx.measureText(txt).width + 32;
+      ctx.fillStyle = "rgba(0,0,0,0.3)";
+      rr(-tw / 2, -14, tw, 28, 14);
+      ctx.fill();
+      const cg = ctx.createLinearGradient(0, -14, 0, 14);
+      cg.addColorStop(0, "#ffe14d");
+      cg.addColorStop(1, "#ff9d2e");
+      ctx.fillStyle = cg;
+      rr(-tw / 2 + 2, -12, tw - 4, 24, 12);
+      ctx.fill();
+      ctx.fillStyle = "#5a3800";
+      ctx.textAlign = "center";
+      ctx.font = uiFont(18);
+      ctx.fillText(txt, 0, 6);
+      ctx.restore();
+      const cbw = 116;
+      ctx.fillStyle = "rgba(0,0,0,0.3)";
+      rr(W / 2 - cbw / 2, 146, cbw, 5, 2.5);
+      ctx.fill();
+      ctx.fillStyle = "#ffd23f";
+      rr(W / 2 - cbw / 2, 146, cbw * clamp(comboTimer / 2.6, 0, 1), 5, 2.5);
+      ctx.fill();
+    }
   }
 
   // ---------------------------------------------------------------- overlays
   function bigTitle(text, y, size, col) {
     ctx.textAlign = "center";
-    ctx.font = `bold ${size}px 'Comic Sans MS', sans-serif`;
+    ctx.font = `bold ${size}px 'Comic Sans MS', 'Trebuchet MS', sans-serif`;
     ctx.lineWidth = size / 5;
+    ctx.lineJoin = "round";
     ctx.strokeStyle = "#14110f";
     ctx.strokeText(text, W / 2, y);
     ctx.fillStyle = col;
     ctx.fillText(text, W / 2, y);
   }
+  function scrim(a0, a1) {
+    const sc = ctx.createLinearGradient(0, 0, 0, H);
+    sc.addColorStop(0, "rgba(12,10,20," + a0 + ")");
+    sc.addColorStop(0.5, "rgba(12,10,20," + a1 + ")");
+    sc.addColorStop(1, "rgba(12,10,20," + a0 + ")");
+    ctx.fillStyle = sc;
+    ctx.fillRect(0, 0, W, H);
+  }
 
   function drawMenu() {
-    ctx.fillStyle = "rgba(20,17,15,0.55)";
-    ctx.fillRect(0, 0, W, H);
+    scrim(0.34, 0.64);
 
-    // animated demo skier bobbing at top
-    const bx = W / 2 + Math.sin(elapsed * 2) * 60;
+    const bx = W / 2 + Math.sin(elapsed * 2) * 62;
     drawSkier(bx, 150, Math.sin(elapsed * 2) * 0.4);
 
-    bigTitle("LYŽIAR", 250, 54, "#ffd23f");
-    bigTitle("NA KORBE", 305, 54, "#6fd3ff");
-    ctx.font = "16px 'Comic Sans MS', sans-serif";
-    ctx.fillStyle = "#fff";
+    bigTitle("LYŽIAR", 252, 56, "#ffd23f");
+    bigTitle("NA KORBE", 308, 56, "#6fd3ff");
+    ctx.font = uiFont(14, "600");
+    ctx.fillStyle = "rgba(255,255,255,0.85)";
     ctx.textAlign = "center";
-    ctx.fillText("🎿 Ski Truck Slalom 🚚", W / 2, 345);
+    ctx.fillText("🎿  S K I   T R U C K   S L A L O M  🚚", W / 2, 344);
 
-    // instructions card
-    panel(W / 2 - 200, 410, 400, 210);
-    ctx.fillStyle = "#fff";
-    ctx.font = "15px 'Comic Sans MS', sans-serif";
+    panel(W / 2 - 205, 372, 410, 202);
     ctx.textAlign = "left";
     const lines = [
       "🎯  Kľučkuj (slalom) medzi autami v premávke.",
-      "💥  Nenaraz svojím autom do premávky — inak koniec!",
+      "💥  Nenaraz svojím autom — inak je koniec!",
       "🏁  Príď do CIEĽa (5 km) čo najrýchlejšie.",
       "⚡  Čím ďalej ideš, tým si rýchlejší = viac bodov.",
       "🤟  Tesné prejazdy = SLALOM combo a extra body.",
     ];
-    lines.forEach((l, i) => ctx.fillText(l, W / 2 - 186, 440 + i * 30));
+    lines.forEach((l, i) => {
+      ctx.fillStyle = "rgba(238,240,255,0.95)";
+      ctx.font = uiFont(15, "600");
+      ctx.fillText(l, W / 2 - 188, 406 + i * 33);
+    });
 
+    pillButton(W / 2, 622, "▶  ŠTART", "#22a558");
     ctx.textAlign = "center";
-    const blink = Math.sin(elapsed * 5) > -0.3;
-    if (blink) {
-      ctx.fillStyle = "#ffe14d";
-      ctx.font = "bold 22px 'Comic Sans MS', sans-serif";
-      ctx.fillText("▶  Stlač MEDZERU / ťukni pre ŠTART", W / 2, 660);
-    }
-    ctx.fillStyle = "#cfe6ff";
-    ctx.font = "14px 'Comic Sans MS', sans-serif";
-    ctx.fillText("Najlepšie skóre: " + best.toLocaleString("sk-SK"), W / 2, 700);
+    ctx.fillStyle = "rgba(255,255,255,0.65)";
+    ctx.font = uiFont(12, "600");
+    ctx.fillText("Medzera / ťuknutie", W / 2, 662);
+    ctx.fillStyle = "rgba(255,255,255,0.85)";
+    ctx.font = uiFont(13);
+    ctx.fillText("🏆 Najlepšie: " + best.toLocaleString("sk-SK"), W / 2, 692);
   }
 
   function drawOver() {
-    ctx.fillStyle = "rgba(20,17,15,0.66)";
-    ctx.fillRect(0, 0, W, H);
+    scrim(0.55, 0.8);
 
-    bigTitle(finished ? "DOJAZD!" : "BUM! 💥", 180, 52, finished ? "#8fe36b" : "#ff6b6b");
+    bigTitle(finished ? "DOJAZD!" : "BUM! 💥", 150, 50, finished ? "#8fe36b" : "#ff6b6b");
     ctx.textAlign = "center";
-    ctx.fillStyle = "#fff";
-    ctx.font = "18px 'Comic Sans MS', sans-serif";
-    ctx.fillText(
-      finished ? "Dorazil si do cieľa a išiel ďalej!" : pick(SPLATS),
-      W / 2,
-      215
-    );
+    ctx.fillStyle = "rgba(255,255,255,0.9)";
+    ctx.font = uiFont(16, "600");
+    ctx.fillText(finished ? "Dorazil si do cieľa a išiel ďalej!" : pick(SPLATS), W / 2, 182);
 
-    // scoreboard card
-    panel(W / 2 - 190, 250, 380, 250);
-    ctx.textAlign = "left";
-    ctx.font = "17px 'Comic Sans MS', sans-serif";
+    panel(W / 2 - 200, 205, 400, 212);
     const distScore = Math.floor((distanceM / 1000) * CFG.SCORE_PER_KM);
     const rows = [
-      ["📏 Vzdialenosť", (distanceM / 1000).toFixed(2) + " km"],
-      ["   → body za km", "+" + distScore.toLocaleString("sk-SK")],
-      ["🤟 Slalom prejazdy", nearMisses + "  (max x" + bestCombo + ")"],
-      ["   → slalom body", "+" + Math.floor(slalomScore).toLocaleString("sk-SK")],
-      [
-        finished ? "🏁 Čas do cieľa" : "🏁 Cieľ",
-        finished ? finishTime.toFixed(1) + " s" : "nedosiahnutý",
-      ],
-      ["   → časový bonus", "+" + timeBonus.toLocaleString("sk-SK")],
+      { l: "📏 Vzdialenosť", v: (distanceM / 1000).toFixed(2) + " km" },
+      { l: "body za km", v: "+" + distScore.toLocaleString("sk-SK"), sub: true },
+      { l: "🤟 Slalom prejazdy", v: nearMisses + "  (max x" + bestCombo + ")" },
+      { l: "slalom body", v: "+" + Math.floor(slalomScore).toLocaleString("sk-SK"), sub: true },
+      {
+        l: finished ? "🏁 Čas do cieľa" : "🏁 Cieľ",
+        v: finished ? finishTime.toFixed(1) + " s" : "—",
+      },
+      { l: "časový bonus", v: "+" + timeBonus.toLocaleString("sk-SK"), sub: true },
     ];
     rows.forEach((r, i) => {
-      const y = 285 + i * 30;
-      ctx.fillStyle = i % 2 === 0 ? "#fff" : "#cfe6ff";
-      ctx.fillText(r[0], W / 2 - 175, y);
-      ctx.textAlign = "right";
-      ctx.fillText(r[1], W / 2 + 175, y);
+      const y = 238 + i * 28;
       ctx.textAlign = "left";
+      ctx.fillStyle = r.sub ? "rgba(255,255,255,0.55)" : "#fff";
+      ctx.font = uiFont(r.sub ? 13 : 15, r.sub ? "600" : "bold");
+      ctx.fillText(r.sub ? "   ↳ " + r.l : r.l, W / 2 - 182, y);
+      ctx.textAlign = "right";
+      ctx.fillStyle = r.sub ? "#ffe14d" : "#cfe6ff";
+      ctx.fillText(r.v, W / 2 + 182, y);
     });
 
-    // total
-    ctx.textAlign = "center";
-    bigTitle(totalScore().toLocaleString("sk-SK") + " BODOV", 540, 34, "#ffe14d");
+    // total band
+    const ty = 448;
+    ctx.fillStyle = "rgba(255,226,77,0.14)";
+    rr(W / 2 - 200, ty - 26, 400, 44, 12);
+    ctx.fill();
+    ctx.textAlign = "left";
     ctx.fillStyle = "#fff";
-    ctx.font = "16px 'Comic Sans MS', sans-serif";
+    ctx.font = uiFont(15);
+    ctx.fillText("SPOLU", W / 2 - 182, ty);
+    ctx.textAlign = "right";
+    ctx.fillStyle = "#ffe14d";
+    ctx.font = uiFont(26);
+    ctx.fillText(totalScore().toLocaleString("sk-SK") + " b", W / 2 + 182, ty + 3);
+
     const rec = totalScore() >= best && totalScore() > 0;
+    ctx.textAlign = "center";
+    ctx.font = uiFont(15, "600");
+    ctx.fillStyle = rec ? "#ffd23f" : "rgba(255,255,255,0.75)";
     ctx.fillText(
-      rec ? "🏆 NOVÝ REKORD! 🏆" : "Najlepšie: " + best.toLocaleString("sk-SK"),
+      rec ? "🏆 NOVÝ REKORD! 🏆" : "🏆 Najlepšie: " + best.toLocaleString("sk-SK"),
       W / 2,
-      572
+      500
     );
 
-    const blink = Math.sin(elapsed * 5) > -0.3;
-    if (blink) {
-      ctx.fillStyle = "#ffe14d";
-      ctx.font = "bold 22px 'Comic Sans MS', sans-serif";
-      ctx.fillText("▶  MEDZERA / ťuk — hrať znova", W / 2, 640);
-    }
+    pillButton(W / 2, 552, "↻  HRAŤ ZNOVA", finished ? "#22a558" : "#e0503a");
+    ctx.textAlign = "center";
+    ctx.fillStyle = "rgba(255,255,255,0.6)";
+    ctx.font = uiFont(12, "600");
+    ctx.fillText("Medzera / ťuknutie", W / 2, 592);
   }
 
   const SPLATS = [
@@ -2296,13 +2540,13 @@ canvas#game {
   ];
 
   function drawPaused() {
-    ctx.fillStyle = "rgba(20,17,15,0.55)";
-    ctx.fillRect(0, 0, W, H);
-    bigTitle("PAUZA", H / 2 - 10, 46, "#fff");
+    scrim(0.5, 0.68);
+    bigTitle("PAUZA", H / 2 - 24, 46, "#fff");
+    pillButton(W / 2, H / 2 + 26, "▶  POKRAČOVAŤ", "#22a558");
     ctx.textAlign = "center";
-    ctx.fillStyle = "#ffe14d";
-    ctx.font = "bold 20px 'Comic Sans MS', sans-serif";
-    ctx.fillText("Stlač P / MEDZERU pre pokračovanie", W / 2, H / 2 + 30);
+    ctx.fillStyle = "rgba(255,255,255,0.6)";
+    ctx.font = uiFont(12, "600");
+    ctx.fillText("P / Medzera", W / 2, H / 2 + 66);
   }
 
   // ---------------------------------------------------------------- flow
